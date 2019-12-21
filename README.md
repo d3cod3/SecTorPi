@@ -20,7 +20,7 @@ Table of Contents
 
 # Install
 
-### 1 Download the last official Raspbian Buster Lite from https://www.raspberrypi.org/downloads/raspbian/
+### 1 - Download the last official Raspbian Buster Lite from https://www.raspberrypi.org/downloads/raspbian/
 
 Direct link: https://downloads.raspberrypi.org/raspbian_lite_latest
 
@@ -52,6 +52,6 @@ sudo dd if=raspbian-buster-lite.img of=/dev/YOUR_DEVICE_NAME bs=1M conv=fdatasyn
 # Configuration
 
 
-## Users
+## Users
 
 ## SSH
