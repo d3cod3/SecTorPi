@@ -713,14 +713,71 @@ sudo cp example-dnscrypt-proxy.toml dnscrypt-proxy.toml
 sudo nano dnscrypt-proxy.toml
 ```
 
-Then edit it:
+Then edit it and save it:
+
+```bash
+# dnscrypt server list: https://dnscrypt.info/public-servers
+server_names = ['cloudflare'] # choose here the one/s you prefer
+
+# port 53 is already occupied by dnsmasq, so we need to use a different one
+listen_addresses = ['127.0.2.1:54']
+
+# Server must support DNS security extensions (DNSSEC)
+require_dnssec = true
+```
+
+In order to have dnsmasq running with dnscrypt we need to modify our /etc/dnsmasq.conf:
 
 ```bash
 
+sudo nano /etc/dnsmasq.conf
+
+interface=wlan0      # Use the require wireless interface - usually wlan0
+dhcp-range=192.168.66.2,192.168.66.200,255.255.255.0,24h
+# Set DHCP as authoritative
+dhcp-authoritative
+# Redirect everything to dnscrypt-proxy
+server=127.0.2.1#54
+no-resolv
+proxy-dnssec
 ```
 
-Finally we can check our DNS info from here:
+Then restart dnsmasq:
+
+```bash
+sudo systemctl reload dnsmasq
+```
+
+Now we install and start the new service:
+
+```bash
+sudo ./dnscrypt-proxy -service install
+
+sudo ./dnscrypt-proxy -service start
+
+sudo ./dnscrypt-proxy -service status
+```
+
+Let's check it with netstat:
+
+```bash
+netstat -tulp
+```
+
+You will find in the output:
+
+```bash
+tcp        0      0 192.168.66.1:9040       0.0.0.0:*               LISTEN      966/tor             
+tcp        0      0 0.0.0.0:domain          0.0.0.0:*               LISTEN      707/dnsmasq         
+tcp        0      0 127.0.2.1:54            0.0.0.0:*               LISTEN      520/dnscrypt-proxy
+```
+
+So, if everything went ok, we will have dnsmasq redirecting all the port 53 requests to our dnscrypt proxy configured at 127.0.2.1 at port 54, so all DNS queries will be encrypted on the way.
+
+That's it, finally we can check our DNS info from here:
 
 * https://www.dnsleaktest.com
 
 If everything were configured right, you'll see a lot of DNS servers with different location from your real one, and differents ISP from the one you're really using.
+
+Enjoy!
