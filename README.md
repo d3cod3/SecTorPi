@@ -4,6 +4,8 @@
 
 ![Onion Router](https://github.com/d3cod3/SecTorPi/raw/master/img/onion-router.jpg)
 
+[![ko-fi](https://www.ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/V7V21B90C)
+
 
 Table of Contents
 =================
@@ -18,6 +20,7 @@ Table of Contents
     * [Encryption](#encryption)
     * [Net](#net)
     * [Tor](#tor)
+    * [DNSCrypt](#dnscrypt)
 
 
 # Description
@@ -139,13 +142,31 @@ And edit:
 ListenAddress 0.0.0.0
 
 # Disallow SSH access to root account
+LoginGraceTime 60
 PermitRootLogin no
+StrictModes yes
+MaxAuthTries 6
+MaxSessions 3
+
+# Don't read the user's ~/.rhosts and ~/.shosts files
+IgnoreRhosts yes
+
+# disable rhosts based authentication
+RhostsAuthentication no
+RhostsRSAAuthentication no
+
+# enable RSA authentication
+RSAAuthentication yes
 
 # Disable X11Forwarding
 X11Forwarding no
 
+# disable challenge-response password
+ChallengeResponseAuthentication no
+
 # Disable tunneled cleartext password authentication and enable SSH public key only access
 PasswordAuthentication no
+PermitEmptyPasswords no
 PubkeyAuthentication yes
 AuthorizedKeysFile      .ssh/authorized_keys
 
@@ -413,10 +434,27 @@ And that’s it. Reboot and it should prompt you with something like "Please unl
 
 ## Net
 
-### 1 - Install&configure necessary packages for make the rpi an access point in a standalone network
+
+### 0 - Before we start
+
+In case we do not want to use the default RPi onboard wifi card, and instead use an external one, maybe one with a better antenna or whatever, we have the option to disable onboard wifi and bluetooth. And, as it can be considered common practice to disable what you're not going to use, if security is important for us, then we can do that just by editing the /boot/config.txt file:
 
 ```bash
-sudo apt install dnsmasq hostapd
+sudo nano /boot/config.txt
+
+# add this at the end
+dtoverlay=disable-wifi
+dtoverlay=disable-bt
+```
+
+So on startup, our RPi will recognize as **wlan0** our external wifi card, not the default onboard one.
+
+### 1 - Install&configure necessary packages for make the rpi an access point in a standalone network
+
+We'll configure here our wifi card **wlan0** as a router, assigning a static ip to the interface.
+
+```bash
+sudo apt install dnsmasq hostapd tcpdump
 sudo nano /etc/dhcpcd.conf
 
 interface wlan0   # Use the require wireless interface - usually wlan0
@@ -428,12 +466,16 @@ sudo systemctl restart dhcpcd
 
 ### 2 - Configure the DHCP server (dnsmasq)
 
+Then we configure our dhcp server ip range, in order to have an automatic ip assigned to every connecting client. As we assigned to our wifi card/router the ip 192.168.66.1, we use a range starting from 192.168.66.2 till 192.168.66.200, but here you can trim it as you prefer, reducing the maximum number of clients or extending it. your choice.
+
 ```bash
 sudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
 sudo nano /etc/dnsmasq.conf
 
 interface=wlan0      # Use the require wireless interface - usually wlan0
 dhcp-range=192.168.66.2,192.168.66.200,255.255.255.0,24h
+# Set DHCP as authoritative
+dhcp-authoritative
 
 sudo systemctl reload dnsmasq
 ```
@@ -441,6 +483,8 @@ sudo systemctl reload dnsmasq
 ### 3 - Configure the access point host software (hostapd)
 
 NOTE: wpa_key must be minimum 8 characters
+
+Here we configure our access point, configuring his name (how will appear on wifi lists), the password and some more technical details. Remember to choose a good password, at least of 10 characters, in order to make it harder for brute force crackers.
 
 ```bash
 sudo nano /etc/hostapd/hostapd.conf
@@ -461,6 +505,8 @@ wpa_pairwise=TKIP
 rsn_pairwise=CCMP
 ```
 
+Now apply the config and restart the services:
+
 ```bash
 sudo nano /etc/default/hostapd
 
@@ -475,17 +521,6 @@ sudo systemctl start hostapd
 
 ```bash
 sudo apt install iptables-persistent
-```
-
-```bash
-sudo nano /etc/sysctl.conf
-
-net.ipv4.ip_forward=1
-
-# rpi tweaks
-vm.swappiness=1
-vm.min_free_kbytes = 8192
-
 ```
 
 And then run the following commands to create the network translation between the ethernet port eth0 and the wifi port wlan0:
@@ -509,15 +544,55 @@ Then save it:
 sudo sh -c "iptables-save > /etc/iptables/rules.v4"
 ```
 
+Ok, right now we have a full working router, with a new wifi connection where we can connect from every computer or phone. Next steps, a little hardening and finally the installation of tor software.
+
+### 5 - Hardening
+
+Kernel hardening for security:
+
+```bash
+sudo nano /etc/sysctl.conf
+
+# enable Spoof protection
+net.ipv4.conf.default.rp_filter=1
+net.ipv4.conf.all.rp_filter=1
+
+# Enable TCP/IP SYN cookies
+net.ipv4.tcp_syncookies=1
+
+# enable packet forwarding for IPv4
+net.ipv4.ip_forward=1
+
+# Ignore ICMP broadcasts
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+
+# Ignore bogus ICMP errors
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+
+# Do not accept ICMP redirects (prevent MITM attacks)
+net.ipv4.conf.all.accept_redirects = 0
+
+# Do not send ICMP redirects
+net.ipv4.conf.all.send_redirects = 0
+
+# Do not accept IP source route packets
+net.ipv4.conf.all.accept_source_route = 0
+
+# rpi tweaks
+vm.swappiness=1
+vm.min_free_kbytes = 8192
+
+```
+
 ## Tor
 
 ### 1 - Install tor, the onion routing software
 
 ```bash
-sudo apt install tor tor-arm
+sudo apt install tor
 ```
 
-Now, configure it:
+Now, configure it, just change the configured access point ip *192.168.66.1* if different:
 
 ```bash
 sudo nano /etc/tor/torrc
@@ -535,9 +610,15 @@ DNSListenAddress 192.168.66.1
 CircuitBuildTimeout 10
 LearnCircuitBuildTimeout 0
 MaxCircuitDirtiness 10
+
+# blacklist exit nodes by geolocation
+# country codes list: https://b3rn3d.herokuapp.com/blog/2014/03/05/tor-country-codes/
+StrictNodes 1
+ExcludeExitNodes {CHOOSE_YOUR_COUNTRY_CODES_HERE}
+
 ```
 
-Almost there, we now need to change out ip routing tables so that connections via the wifi interface (wlan0) will be routed through the tor software:
+Almost there, we now need to change out ip routing tables so that connections via the wifi interface (wlan0) will be routed through the tor software ONLY:
 
 ```bash
 sudo iptables -F
@@ -545,7 +626,6 @@ sudo iptables -t nat -F
 ```
 
 ```bash
-sudo iptables -t nat -A PREROUTING -i wlan0 -p tcp --dport 22 -j REDIRECT --to-ports 22
 sudo iptables -t nat -A PREROUTING -i wlan0 -p udp --dport 53 -j REDIRECT --to-ports 53
 sudo iptables -t nat -A PREROUTING -i wlan0 -p tcp --syn -j REDIRECT --to-ports 9040
 ```
@@ -555,14 +635,17 @@ sudo iptables -t nat -L
 ```
 
 ```bash
-sudo sh -c "iptables-save > /etc/iptables.ipv4.nat"
+sudo sh -c "iptables-save > /etc/iptables/rules.v4"
 ```
+
+Now we create our log file for debug:
 
 ```bash
 sudo touch /var/log/tor/notices.log
 sudo chown debian-tor /var/log/tor/notices.log
 sudo chmod 644 /var/log/tor/notices.log
 ```
+Then we activate the tor service in order to have it running automatically on startup and restart it to apply the new config:
 
 ```bash
 sudo update-rc.d tor enable
@@ -572,7 +655,16 @@ sudo service tor restart
 sudo service tor status
 ```
 
+![Onion Router](https://github.com/d3cod3/SecTorPi/raw/master/img/raspberryPi3TorAccessPoint.png)
+
+Ok, we have now our well configured **Onion Router**, and we can test it through several pages:
+
+* https://check.torproject.org
+* https://ipleak.org
+
 ### 2 - Install monit service to reload Tor service if down
+
+This simple application automatically reload our Tor service if down, so we'll have the service always up.
 
 ```bash
 sudo apt install monit
@@ -586,3 +678,49 @@ check process gdm with pidfile /var/run/tor/tor.pid
 sudo systemctl restart monit
 sudo systemctl enable monit
 ```
+
+## DNScrypt [OPTIONAL]
+
+If you want to add to our system DNS encryption, to prevent DNS spoofing we'll install dnscrypt, that using cryptographic signatures it verifies if the DNS response originates from the configured DNS resolver and haven’t been tampered with. This can prevent MITM (Man-in-the-Middle) attacks, or at least some of them.
+
+Ok, we start with downloading DNSCrypt in our */opt* directory ( the last release is now 2.0.36, change the link below accordingly with the actual last release ):
+
+```bash
+cd /opt
+
+sudo wget https://github.com/DNSCrypt/dnscrypt-proxy/releases/download/2.0.36/dnscrypt-proxy-linux_arm-2.0.36.tar.gz
+```
+
+Extract the prebuilt binary:
+
+```bash
+sudo tar -xf dnscrypt-proxy-linux_arm-2.0.36.tar.gz
+```
+
+And rename it
+
+```bash
+sudo mv linux-arm dnscrypt-proxy
+```
+
+Now, enter the directory and edit the config file:
+
+```bash
+cd dnscrypt-proxy
+
+sudo cp example-dnscrypt-proxy.toml dnscrypt-proxy.toml
+
+sudo nano dnscrypt-proxy.toml
+```
+
+Then edit it:
+
+```bash
+
+```
+
+Finally we can check our DNS info from here:
+
+* https://www.dnsleaktest.com
+
+If everything were configured right, you'll see a lot of DNS servers with different location from your real one, and differents ISP from the one you're really using.
