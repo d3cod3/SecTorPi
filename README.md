@@ -383,7 +383,7 @@ sudo reboot
 
 If everything was right, our RPi will fail to boot and automatically drop into the initramfs shell.
 
-INITRAMFS SHELL IMAGE HERE
+![Initramfs](https://github.com/d3cod3/SecTorPi/raw/master/img/initramfs.jpeg)
 
 ### 4 - Shrink and encrypt
 
