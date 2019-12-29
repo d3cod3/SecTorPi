@@ -679,7 +679,7 @@ sudo systemctl restart monit
 sudo systemctl enable monit
 ```
 
-## DNScrypt [OPTIONAL]
+## DNScrypt
 
 If you want to add to our system DNS encryption, to prevent DNS spoofing we'll install dnscrypt, that using cryptographic signatures it verifies if the DNS response originates from the configured DNS resolver and haven’t been tampered with. This can prevent MITM (Man-in-the-Middle) attacks, or at least some of them.
 
