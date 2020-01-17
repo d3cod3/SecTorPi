@@ -724,6 +724,12 @@ listen_addresses = ['127.0.2.1:54']
 
 # Server must support DNS security extensions (DNSSEC)
 require_dnssec = true
+
+# Always use TCP to connect to upstream servers.
+ force_tcp = true
+
+ # SOCKS proxy
+ proxy = 'socks5://127.0.0.1:9050'
 ```
 
 In order to have dnsmasq running with dnscrypt we need to modify our /etc/dnsmasq.conf:
